@@ -1,0 +1,23 @@
+# Claude / AI tooling
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+.codegraph/
+plans/
+AGENTS.md
+
+# Env & secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Go build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# OS
+.DS_Store
