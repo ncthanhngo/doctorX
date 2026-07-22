@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var state = AppState()
     @State private var showQuickRestore = false
+    @State private var showCreateUSB = false
     @State private var deviceMonitor = DeviceMonitor()
 
     var body: some View {
@@ -30,7 +31,18 @@ struct ContentView: View {
             }
         }
         .onDisappear { deviceMonitor.stop() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showCreateUSB = true
+                } label: {
+                    Label("Tạo USB", systemImage: "externaldrive.badge.plus")
+                }
+                .help("Ghi image, format hoặc kiểm tra ổ (xoá dữ liệu)")
+            }
+        }
         .sheet(isPresented: $showQuickRestore) { QuickRestoreView(state: state) }
+        .sheet(isPresented: $showCreateUSB) { CreateUSBView(disks: state.disks) }
         .alert("Có lỗi xảy ra", isPresented: .init(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } }
