@@ -39,6 +39,13 @@ func Format(ctx context.Context, req FormatRequest) (*FormatResult, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// NTFS đi đường riêng: diskutil không format được NTFS nên phải phân vùng rồi
+	// gọi mkntfs (đóng gói kèm app) — xem format_ntfs.go.
+	if strings.ToLower(strings.TrimSpace(req.FS)) == "ntfs" {
+		return formatNTFS(ctx, d, req)
+	}
+
 	args, out, err := buildEraseArgs(req)
 	if err != nil {
 		return nil, err
@@ -68,9 +75,6 @@ var eraseScheme = map[string]string{
 // mong đợi.
 func buildEraseArgs(req FormatRequest) ([]string, *FormatResult, error) {
 	fs := strings.ToLower(strings.TrimSpace(req.FS))
-	if fs == "ntfs" {
-		return nil, nil, fmt.Errorf("format NTFS chưa khả dụng trong bản build này (cần đóng gói mkntfs)")
-	}
 	pers, ok := erasePersonality[fs]
 	if !ok {
 		return nil, nil, fmt.Errorf("filesystem không hỗ trợ: %q (chọn fat32, exfat)", req.FS)
