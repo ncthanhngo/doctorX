@@ -25,6 +25,11 @@ final class AppState {
         if DemoData.isEnabled {
             disks = DemoData.disks()
             isDaemonReachable = true
+            // Cho phép tự chọn sẵn một ổ khi xem trước giao diện (chỉ demo).
+            if selected == nil, let want = ProcessInfo.processInfo.environment["DOCTORX_DEMO_SELECT"],
+               let p = disks.flatMap(\.partitions).first(where: { $0.bsd == want }) {
+                select(p)
+            }
             return
         }
         do {
