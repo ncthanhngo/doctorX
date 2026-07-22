@@ -83,15 +83,8 @@ type ProgressFunc func(done, total int64)
 // dữ liệu trên ổ. Trình tự: phân giải + khoá target → tháo toàn ổ → ghi tuần tự
 // → (tuỳ chọn) verify → gắn lại best-effort.
 func Flash(ctx context.Context, req FlashRequest, progress ProgressFunc) (*FlashResult, error) {
-	disks, err := blockdev.ListExternalDisks(ctx)
+	d, err := lockTarget(ctx, req.BSD, req.ExpectSize, req.ExpectModel, req.Confirm)
 	if err != nil {
-		return nil, err
-	}
-	d, err := resolveTarget(disks, req.BSD)
-	if err != nil {
-		return nil, err
-	}
-	if err := checkLock(d, req.ExpectSize, req.ExpectModel, req.Confirm); err != nil {
 		return nil, err
 	}
 

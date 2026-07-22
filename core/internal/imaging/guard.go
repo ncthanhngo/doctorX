@@ -10,6 +10,7 @@
 package imaging
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -56,6 +57,24 @@ func canonicalConfirm(d blockdev.Disk) string {
 		return m
 	}
 	return d.BSD
+}
+
+// lockTarget là cổng an toàn dùng chung cho MỌI thao tác ghi phá huỷ (flash,
+// format, write-test bad block): liệt kê ổ ngoài → phân giải whole disk → khoá
+// target. Trả về ổ đã xác thực, sẵn sàng để tháo mount và ghi.
+func lockTarget(ctx context.Context, bsd string, expectSize int64, expectModel, confirm string) (blockdev.Disk, error) {
+	disks, err := blockdev.ListExternalDisks(ctx)
+	if err != nil {
+		return blockdev.Disk{}, err
+	}
+	d, err := resolveTarget(disks, bsd)
+	if err != nil {
+		return blockdev.Disk{}, err
+	}
+	if err := checkLock(d, expectSize, expectModel, confirm); err != nil {
+		return blockdev.Disk{}, err
+	}
+	return d, nil
 }
 
 // checkLock enforce target lock: ổ hiện tại phải khớp thứ người dùng đã thấy lúc

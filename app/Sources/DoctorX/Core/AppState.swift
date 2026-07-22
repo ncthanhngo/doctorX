@@ -22,6 +22,11 @@ final class AppState {
     var isDaemonReachable = false
 
     func refreshDevices() async {
+        if DemoData.isEnabled {
+            disks = DemoData.disks()
+            isDaemonReachable = true
+            return
+        }
         do {
             let result = try await run { try await self.client.call(method: "list_devices") }
             let raw = result["disks"] as? [[String: Any]] ?? []
@@ -49,6 +54,12 @@ final class AppState {
 
     func scan() async {
         guard let part = selected else { return }
+        if DemoData.isEnabled {
+            // Ổ NTFS lớn coi như sạch, còn lại coi như nhiễm — để xem cả hai
+            // trạng thái giao diện.
+            scanResult = part.fsType == "ntfs" ? DemoData.cleanScan() : DemoData.infectedScan()
+            return
+        }
         busyMessage = "Đang quét \(part.displayName)..."
         do {
             let result = try await run {

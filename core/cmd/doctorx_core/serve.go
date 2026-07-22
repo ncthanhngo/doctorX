@@ -74,6 +74,8 @@ func registerHandlers(srv *ipc.Server) {
 	srv.Handle("rescue_unhide", handleUnhide)
 	srv.Handle("flash_preflight", handleFlashPreflight)
 	srv.Handle("flash_image", handleFlashImage)
+	srv.Handle("format_disk", handleFormatDisk)
+	srv.Handle("check_bad_blocks", handleCheckBadBlocks)
 }
 
 func handleFlashPreflight(ctx context.Context, raw json.RawMessage, _ func(string, any)) (any, error) {
@@ -100,6 +102,32 @@ func handleFlashImage(ctx context.Context, raw json.RawMessage, emit func(string
 	})
 	if err != nil {
 		// Trả cả res (nếu có) để UI biết đã ghi tới đâu khi verify thất bại.
+		return res, ipc.Errf(ipc.CodeIO, "%v", err)
+	}
+	return res, nil
+}
+
+func handleFormatDisk(ctx context.Context, raw json.RawMessage, _ func(string, any)) (any, error) {
+	var req imaging.FormatRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return nil, ipc.Errf(ipc.CodeBadRequest, "tham số không hợp lệ: %v", err)
+	}
+	res, err := imaging.Format(ctx, req)
+	if err != nil {
+		return nil, ipc.Errf(ipc.CodeIO, "%v", err)
+	}
+	return res, nil
+}
+
+func handleCheckBadBlocks(ctx context.Context, raw json.RawMessage, emit func(string, any)) (any, error) {
+	var req imaging.BadBlocksRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return nil, ipc.Errf(ipc.CodeBadRequest, "tham số không hợp lệ: %v", err)
+	}
+	res, err := imaging.CheckBadBlocks(ctx, req, func(done, total int64) {
+		emit("progress", map[string]any{"doneBytes": done, "totalBytes": total})
+	})
+	if err != nil {
 		return res, ipc.Errf(ipc.CodeIO, "%v", err)
 	}
 	return res, nil

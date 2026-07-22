@@ -111,8 +111,3 @@ struct ScanResult {
     }
 }
 
-func formatBytes(_ n: Int64) -> String {
-    let f = ByteCountFormatter()
-    f.countStyle = .file
-    return f.string(fromByteCount: n)
-}
