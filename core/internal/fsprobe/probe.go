@@ -107,8 +107,14 @@ func detect(rd *blockdev.Reader) (dfs.Volume, error) {
 	case string(boot[3:11]) == "NTFS    ":
 		return ntfs.Open(rd)
 	default:
-		// FAT không có chuỗi nhận diện đáng tin ở vị trí cố định, nên để driver
-		// tự kiểm tra BPB và từ chối nếu không hợp lệ.
+		// FAT không có chuỗi nhận diện đáng tin, nhưng mọi FAT hợp lệ đều có
+		// chữ ký 0x55AA ở offset 510-511. Thiếu nó nghĩa là đây KHÔNG phải FAT
+		// (thường là APFS/HFS+ hoặc volume trống) — trả về "không hỗ trợ" để
+		// tầng trên lùi về quét qua mount, thay vì báo "cấu trúc hỏng" gây hiểu
+		// nhầm là ổ bị lỗi.
+		if boot[510] != 0x55 || boot[511] != 0xAA {
+			return nil, fmt.Errorf("%w: filesystem không phải FAT/exFAT/NTFS (không có driver quét sâu)", dfs.ErrUnsupported)
+		}
 		return fat.Open(rd)
 	}
 }

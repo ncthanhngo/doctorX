@@ -77,17 +77,18 @@ type duList struct {
 }
 
 type duInfo struct {
-	Internal        bool   `json:"Internal"`
-	Ejectable       bool   `json:"Ejectable"`
-	RemovableMedia  bool   `json:"RemovableMedia"`
-	VolumeName      string `json:"VolumeName"`
-	FilesystemType  string `json:"FilesystemType"`
-	MountPoint      string `json:"MountPoint"`
-	Size            int64  `json:"Size"`
-	BusProtocol     string `json:"BusProtocol"`
-	MediaName       string `json:"MediaName"`
-	Content         string `json:"Content"`
-	DeviceIdentifie string `json:"DeviceIdentifier"`
+	Internal          bool   `json:"Internal"`
+	Ejectable         bool   `json:"Ejectable"`
+	RemovableMedia    bool   `json:"RemovableMedia"`
+	VolumeName        string `json:"VolumeName"`
+	FilesystemType    string `json:"FilesystemType"`
+	MountPoint        string `json:"MountPoint"`
+	Size              int64  `json:"Size"`
+	BusProtocol       string `json:"BusProtocol"`
+	MediaName         string `json:"MediaName"`
+	Content           string `json:"Content"`
+	DeviceIdentifie   string `json:"DeviceIdentifier"`
+	VirtualOrPhysical string `json:"VirtualOrPhysical"`
 }
 
 // diskutilJSON chạy `diskutil <verb> -plist <rest...>` và giải mã kết quả.
@@ -115,18 +116,28 @@ func diskutilJSON(ctx context.Context, out any, verb string, rest ...string) err
 // đúng nhóm mà DoctorX cần hỗ trợ. Ổ nội bộ không bao giờ xuất hiện, để loại
 // trừ hoàn toàn khả năng thao tác nhầm lên ổ khởi động.
 func ListExternalDisks(ctx context.Context) ([]Disk, error) {
+	// "physical" loại bỏ mọi ổ ảo: disk image (.dmg), volume của iOS Simulator,
+	// cryptex hệ thống, container APFS tổng hợp... — thứ trước đây lọt vào danh
+	// sách và làm rối. Chỉ còn ổ vật lý thật. Cũng giảm mạnh số lần gọi diskutil
+	// nên nhẹ hơn hẳn trên máy có nhiều disk image.
 	var list duList
-	if err := diskutilJSON(ctx, &list, "list"); err != nil {
+	if err := diskutilJSON(ctx, &list, "list", "physical"); err != nil {
 		return nil, err
 	}
 
 	var disks []Disk
 	for _, d := range list.AllDisksAndPartitions {
+		// OSInternal có sẵn trong danh sách, bỏ ổ nội bộ mà chưa cần gọi info.
+		if d.OSInternal {
+			continue
+		}
 		var whole duInfo
 		if err := diskutilJSON(ctx, &whole, "info", d.DeviceIdentifier); err != nil {
 			continue // ổ vừa bị rút giữa chừng: bỏ qua, không làm hỏng cả danh sách
 		}
-		if whole.Internal {
+		// Phòng thêm: bỏ ổ nội bộ và ổ ảo còn sót (disk image gắn qua hdiutil
+		// vẫn hiện là physical nên chặn theo bus/loại ở đây).
+		if whole.Internal || whole.VirtualOrPhysical == "Virtual" || whole.BusProtocol == "Disk Image" {
 			continue
 		}
 

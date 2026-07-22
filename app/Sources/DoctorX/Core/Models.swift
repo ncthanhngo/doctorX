@@ -37,6 +37,16 @@ struct Disk: Identifiable, Hashable {
 
     var id: String { bsd }
 
+    /// Tên dễ hiểu cho người dùng: ưu tiên NHÃN volume (thứ họ đặt và nhận ra,
+    /// vd "NHV BOOT", "Soi") thay vì tên phần cứng (MediaName kiểu "ProductCode",
+    /// "nal USB 3.0"). Lùi về model/bsd nếu ổ không có nhãn nào.
+    var friendlyName: String {
+        if let labeled = partitions.first(where: { !$0.label.isEmpty && !$0.isSystem }) {
+            return labeled.label
+        }
+        return model.isEmpty ? bsd : model
+    }
+
     init?(json: [String: Any]) {
         guard let bsd = json["bsd"] as? String else { return nil }
         self.bsd = bsd

@@ -15,7 +15,8 @@ struct ContentView: View {
                 if let part = state.selected {
                     VolumeDetailView(state: state, partition: part, showQuickRestore: $showQuickRestore)
                 } else {
-                    WelcomeView(reachable: state.isDaemonReachable, hasDisks: !state.disks.isEmpty)
+                    WelcomeView(reachable: state.isDaemonReachable, hasDisks: !state.disks.isEmpty,
+                                onCreateUSB: { showCreateUSB = true })
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -36,9 +37,12 @@ struct ContentView: View {
                 Button {
                     showCreateUSB = true
                 } label: {
-                    Label("Tạo USB", systemImage: "externaldrive.badge.plus")
+                    Label("Tạo USB boot", systemImage: "externaldrive.badge.plus")
+                        .labelStyle(.titleAndIcon)
                 }
-                .help("Ghi image, format hoặc kiểm tra ổ (xoá dữ liệu)")
+                .buttonStyle(.borderedProminent)
+                .tint(Brand.primary)
+                .help("Ghi image ISO/IMG ra USB, format, hoặc kiểm tra ổ (xoá dữ liệu)")
             }
         }
         .sheet(isPresented: $showQuickRestore) { QuickRestoreView(state: state) }
@@ -72,48 +76,33 @@ struct SidebarView: View {
     let state: AppState
 
     var body: some View {
-        VStack(spacing: 0) {
-            BrandHeader()
-
+        // Dùng List kiểu sidebar: các row TỰ được macOS chừa xuống dưới nút
+        // traffic-light + thanh công cụ. Không đặt header tự vẽ ở đỉnh nữa (nó
+        // lọt lên trên vùng nút cửa sổ); thương hiệu dùng tiêu đề native +
+        // logo lớn ở màn chính.
+        List {
             if state.disks.isEmpty {
                 SidebarEmpty()
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
             } else {
-                ScrollView {
-                    VStack(spacing: 10) {
-                        ForEach(state.disks) { disk in
-                            DiskGroup(disk: disk, state: state)
-                        }
-                    }
-                    .padding(12)
+                ForEach(state.disks) { disk in
+                    DiskGroup(disk: disk, state: state)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                 }
             }
-            Spacer(minLength: 0)
+        }
+        .listStyle(.sidebar)
+        .navigationTitle("DoctorX")
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             SidebarFooter(reachable: state.isDaemonReachable)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 
-/// Đầu trang thương hiệu với logo chữ thập y tế.
-struct BrandHeader: View {
-    var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 9).fill(Brand.heroGradient)
-                Image(systemName: "cross.case.fill").foregroundStyle(.white).font(.system(size: 16, weight: .bold))
-            }
-            .frame(width: 34, height: 34)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("DoctorX").font(.headline.bold())
-                Text("Cứu dữ liệu USB & ổ ngoài").font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .background(.ultraThinMaterial)
-        .overlay(Divider(), alignment: .bottom)
-    }
-}
 
 struct DiskGroup: View {
     let disk: Disk

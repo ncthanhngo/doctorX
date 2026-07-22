@@ -5,6 +5,7 @@ import SwiftUI
 struct WelcomeView: View {
     let reachable: Bool
     let hasDisks: Bool
+    var onCreateUSB: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 20) {
@@ -32,6 +33,22 @@ struct WelcomeView: View {
 
             FeatureRow()
                 .padding(.top, 8)
+
+            // Lối vào tính năng tạo USB boot (kiểu Rufus) — đặt rõ ở màn chính
+            // để dễ tìm, không chỉ nằm trong toolbar.
+            Button(action: onCreateUSB) {
+                HStack(spacing: 8) {
+                    Image(systemName: "externaldrive.badge.plus")
+                    Text("Tạo USB boot · Format · Kiểm tra ổ").fontWeight(.medium)
+                }
+                .font(.callout)
+                .padding(.horizontal, 18).padding(.vertical, 11)
+                .foregroundStyle(Brand.primary)
+                .background(Brand.primary.opacity(0.12), in: Capsule())
+                .overlay(Capsule().stroke(Brand.primary.opacity(0.3)))
+            }
+            .buttonStyle(.plain)
+            .help("Ghi image ISO/IMG ra USB để tạo ổ cài đặt, format, hoặc kiểm tra bad block")
         }
         .padding(40)
         .frame(maxWidth: 560)

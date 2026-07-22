@@ -25,9 +25,19 @@ struct CreateUSBView: View {
                     }
                 }
                 .padding(20)
+                // Đổi tab (Ghi image / Format / Kiểm tra ổ) không trượt/mờ dần:
+                // tắt animation ngầm theo thao tác để nội dung đứng yên, chuyển
+                // tức thì thay vì "chuyển động theo".
+                .animation(nil, value: ctrl.action)
+                .animation(nil, value: ctrl.writeTest)
+                .animation(nil, value: ctrl.fs)
+                .animation(nil, value: ctrl.targetBSD)
             }
         }
-        .frame(width: 520, height: 620)
+        // Cao cố định đủ chứa tab cao nhất (Format) với vài ổ, để KHÔNG tab nào
+        // sinh thanh cuộn và chuyển tab vẫn đứng yên (chiều cao không đổi). Tab
+        // ngắn hơn để trống một chút ở dưới — chấp nhận, đổi lấy sự tĩnh.
+        .frame(width: 520, height: 740)
         .fileImporter(isPresented: $showImporter, allowedContentTypes: imageTypes) { result in
             if case .success(let url) = result { ctrl.imagePath = url.path }
         }
@@ -35,6 +45,12 @@ struct CreateUSBView: View {
 
     private var needsConfirm: Bool {
         ctrl.action.destructive || (ctrl.action == .badBlocks && ctrl.writeTest)
+    }
+
+    /// Nhãn volume của ổ đang chọn (để hiển thị), lùi về bsd nếu không có.
+    private var selectedDiskName: String {
+        disks.first(where: { $0.bsd == ctrl.targetBSD })?.friendlyName
+            ?? ctrl.target?.bsd ?? ""
     }
 
     // MARK: đầu trang
@@ -82,7 +98,7 @@ struct CreateUSBView: View {
                 Image(systemName: "externaldrive.fill")
                     .foregroundStyle(selected ? .white : Brand.primary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(disk.model.isEmpty ? disk.bsd : disk.model)
+                    Text(disk.friendlyName)
                         .fontWeight(.semibold).lineLimit(1)
                     Text("\(disk.bsd) · \(formatBytes(disk.sizeBytes))\(disk.busProtocol.isEmpty ? "" : " · \(disk.busProtocol)")")
                         .font(.caption2).foregroundStyle(selected ? .white.opacity(0.85) : .secondary)
@@ -165,16 +181,21 @@ struct CreateUSBView: View {
     // MARK: xác nhận
 
     private var confirmSection: some View {
-        SectionCard(title: "Xác nhận", systemImage: "exclamationmark.shield") {
+        SectionCard(title: "Xác nhận xoá", systemImage: "exclamationmark.shield") {
             if let t = ctrl.target {
-                Text("Gõ lại tên ổ để xác nhận xoá:")
-                    .font(.callout)
-                Text(t.confirmToken)
-                    .font(.callout.monospaced().bold())
-                    .textSelection(.enabled)
-                    .foregroundStyle(Brand.warn)
-                TextField("Nhập chính xác tên ổ", text: $ctrl.confirmInput)
-                    .textFieldStyle(.roundedBorder)
+                // Không bắt gõ lại tên nữa: một ô tick, hiện rõ tên ổ. Khi tick,
+                // tự điền đúng token để dịch vụ nền (vẫn kiểm tra token phía sau)
+                // chấp nhận. Vẫn còn một bước cố ý để không lỡ tay xoá nhầm.
+                Toggle(isOn: Binding(
+                    get: { ctrl.confirmInput == t.confirmToken },
+                    set: { ctrl.confirmInput = $0 ? t.confirmToken : "" }
+                )) {
+                    (Text("Tôi hiểu ổ ")
+                        + Text(selectedDiskName).bold().foregroundColor(Brand.warn)
+                        + Text(" (\(t.bsd)) sẽ bị XOÁ SẠCH toàn bộ dữ liệu."))
+                        .font(.callout)
+                }
+                .tint(Brand.warn)
             }
         }
     }

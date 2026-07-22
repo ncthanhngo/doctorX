@@ -33,10 +33,19 @@ final class AppState {
             return
         }
         do {
-            let result = try await run { try await self.client.call(method: "list_devices") }
+            // KHÔNG bọc trong run{}: đây là poll nền chạy mỗi 30s và mỗi lần
+            // cắm/rút ổ. Bật overlay "đang bận" ở đây sẽ làm màn hình nhấp nháy
+            // liên tục. Chạy im lặng.
+            let result = try await self.client.call(method: "list_devices")
             let raw = result["disks"] as? [[String: Any]] ?? []
-            disks = raw.compactMap(Disk.init)
+            let newDisks = raw.compactMap(Disk.init)
             isDaemonReachable = true
+
+            // Chỉ cập nhật khi danh sách thực sự đổi — tránh SwiftUI vẽ lại toàn
+            // bộ sidebar mỗi vòng poll dù không có gì thay đổi.
+            if newDisks != disks {
+                disks = newDisks
+            }
 
             // Giữ lựa chọn cũ nếu ổ vẫn còn cắm.
             if let sel = selected,
@@ -46,7 +55,6 @@ final class AppState {
             }
         } catch {
             isDaemonReachable = false
-            report(error)
         }
     }
 
