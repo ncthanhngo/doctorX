@@ -5,6 +5,7 @@
 #   make fixtures   sinh lại disk image dùng cho test
 #   make app        ráp DoctorX.app
 #   make tools      build binary ngoài (mkntfs cho NTFS, smartctl cho SMART)
+#   make dmg        đóng gói DoctorX.app thành DMG kéo-thả
 #   make install    cài lõi vào /usr/local/bin
 #   make daemon     chạy dịch vụ nền (cần sudo)
 
@@ -16,7 +17,7 @@ MKNTFS := packaging/vendor/mkntfs
 SMARTCTL := packaging/vendor/smartctl
 BUNDLE_ID := com.doctorx.app
 
-.PHONY: all build core app swift test fixtures clean install daemon fmt mkntfs smartctl tools
+.PHONY: all build core app swift test fixtures clean install daemon fmt mkntfs smartctl tools dmg
 
 all: build
 
@@ -76,6 +77,10 @@ smartctl:
 
 ## Build cả hai binary công cụ ngoài.
 tools: mkntfs smartctl
+
+## Đóng gói DoctorX.app thành DMG kéo-thả (build/DoctorX.dmg) để cài nội bộ.
+dmg: app
+	packaging/make-dmg.sh
 
 test:
 	cd core && go vet ./... && go test ./...
