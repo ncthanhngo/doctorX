@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/soi/doctorx/core/internal/blockdev"
@@ -101,30 +100,9 @@ func findDataPartition(ctx context.Context, wholeBSD, label string) (string, err
 	return "", fmt.Errorf("không tìm thấy phân vùng dữ liệu vừa tạo trên %s", wholeBSD)
 }
 
-// resolveMkntfs tìm binary mkntfs: biến môi trường trước (dev/test), rồi cạnh
-// doctorx-core và trong bố cục app bundle, cuối cùng là PATH của hệ thống.
+// resolveMkntfs tìm binary mkntfs đóng gói kèm app (xem resolveBundled).
 func resolveMkntfs() (string, error) {
-	if p := os.Getenv(mkntfsEnv); p != "" {
-		if isExecutable(p) {
-			return p, nil
-		}
-		return "", fmt.Errorf("%s trỏ tới %q nhưng không chạy được", mkntfsEnv, p)
-	}
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		for _, cand := range []string{
-			filepath.Join(dir, "mkntfs"),
-			filepath.Join(dir, "..", "Resources", "mkntfs"), // .app/Contents/Resources
-		} {
-			if isExecutable(cand) {
-				return cand, nil
-			}
-		}
-	}
-	if p, err := exec.LookPath("mkntfs"); err == nil {
-		return p, nil
-	}
-	return "", fmt.Errorf("không tìm thấy mkntfs — cần đóng gói binary này kèm app để format NTFS")
+	return resolveBundled(mkntfsEnv, "mkntfs")
 }
 
 // isExecutable trả true nếu path là file thường có bit thực thi.

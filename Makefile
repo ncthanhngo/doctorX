@@ -4,7 +4,7 @@
 #   make test       chạy toàn bộ test
 #   make fixtures   sinh lại disk image dùng cho test
 #   make app        ráp DoctorX.app
-#   make mkntfs     build binary mkntfs universal (cho Format → NTFS)
+#   make tools      build binary ngoài (mkntfs cho NTFS, smartctl cho SMART)
 #   make install    cài lõi vào /usr/local/bin
 #   make daemon     chạy dịch vụ nền (cần sudo)
 
@@ -13,9 +13,10 @@ BUILD := build
 APP   := $(BUILD)/DoctorX.app
 CORE  := $(BUILD)/doctorx-core
 MKNTFS := packaging/vendor/mkntfs
+SMARTCTL := packaging/vendor/smartctl
 BUNDLE_ID := com.doctorx.app
 
-.PHONY: all build core app swift test fixtures clean install daemon fmt mkntfs
+.PHONY: all build core app swift test fixtures clean install daemon fmt mkntfs smartctl tools
 
 all: build
 
@@ -51,6 +52,12 @@ app: core swift
 	else \
 		echo "⚠ $(MKNTFS) chưa có (chạy 'make mkntfs') — Format NTFS sẽ báo lỗi lúc chạy"; \
 	fi
+	@if [ -f $(SMARTCTL) ]; then \
+		cp $(SMARTCTL) $(APP)/Contents/MacOS/smartctl; \
+		codesign --force --sign - --options runtime $(APP)/Contents/MacOS/smartctl; \
+	else \
+		echo "⚠ $(SMARTCTL) chưa có (chạy 'make smartctl') — SMART health sẽ báo lỗi lúc chạy"; \
+	fi
 	@# Ký ad-hoc để chạy được trên máy dev. Bản phát hành cần Developer ID.
 	codesign --force --sign - --options runtime $(APP)/Contents/MacOS/doctorx-core
 	codesign --force --sign - --options runtime $(APP)
@@ -61,6 +68,14 @@ app: core swift
 mkntfs:
 	packaging/build-mkntfs.sh
 	@echo "→ $(MKNTFS)"
+
+## Build binary smartctl universal từ nguồn smartmontools (GPLv2) cho SMART health.
+smartctl:
+	packaging/build-smartmontools.sh
+	@echo "→ $(SMARTCTL)"
+
+## Build cả hai binary công cụ ngoài.
+tools: mkntfs smartctl
 
 test:
 	cd core && go vet ./... && go test ./...

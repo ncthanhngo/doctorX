@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -76,6 +77,110 @@ func registerHandlers(srv *ipc.Server) {
 	srv.Handle("flash_image", handleFlashImage)
 	srv.Handle("format_disk", handleFormatDisk)
 	srv.Handle("check_bad_blocks", handleCheckBadBlocks)
+	srv.Handle("wipe_disk", handleWipeDisk)
+	srv.Handle("capture_image", handleCaptureImage)
+	srv.Handle("drive_health", handleDriveHealth)
+	srv.Handle("detect_encryption", handleDetectEncryption)
+	srv.Handle("list_history", handleListHistory)
+}
+
+// historyPath đặt nhật ký thao tác cạnh journal, trong Application Support.
+func historyPath() (string, error) {
+	dir, err := journalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(dir), "history.jsonl"), nil
+}
+
+// recordHistory ghi một dòng audit trail (best-effort — lỗi ghi log không được
+// làm hỏng kết quả thao tác chính).
+func recordHistory(op, device, model, result, detail string) {
+	path, err := historyPath()
+	if err != nil {
+		return
+	}
+	_ = imaging.AppendHistory(path, imaging.HistoryRecord{
+		Time: time.Now().Format(time.RFC3339), Op: op,
+		Device: device, Model: model, Result: result, Detail: detail,
+	})
+}
+
+func handleWipeDisk(ctx context.Context, raw json.RawMessage, emit func(string, any)) (any, error) {
+	var req imaging.WipeRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return nil, ipc.Errf(ipc.CodeBadRequest, "tham số không hợp lệ: %v", err)
+	}
+	res, err := imaging.Wipe(ctx, req, func(done, total int64) {
+		emit("progress", map[string]any{"doneBytes": done, "totalBytes": total})
+	})
+	if err != nil {
+		recordHistory("wipe", req.BSD, req.ExpectModel, "error", err.Error())
+		return res, ipc.Errf(ipc.CodeIO, "%v", err)
+	}
+	recordHistory("wipe", req.BSD, res.DeviceModel, "ok",
+		fmt.Sprintf("%s, %d lượt, %d byte", res.Method, res.Passes, res.BytesWritten))
+	return res, nil
+}
+
+func handleCaptureImage(ctx context.Context, raw json.RawMessage, emit func(string, any)) (any, error) {
+	var req imaging.CaptureRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return nil, ipc.Errf(ipc.CodeBadRequest, "tham số không hợp lệ: %v", err)
+	}
+	res, err := imaging.Capture(ctx, req, func(done, total int64) {
+		emit("progress", map[string]any{"doneBytes": done, "totalBytes": total})
+	})
+	if err != nil {
+		recordHistory("capture", req.BSD, "", "error", err.Error())
+		return res, ipc.Errf(ipc.CodeIO, "%v", err)
+	}
+	recordHistory("capture", req.BSD, "", "ok", fmt.Sprintf("%d byte → %s", res.BytesRead, res.DestPath))
+	return res, nil
+}
+
+func handleDriveHealth(ctx context.Context, raw json.RawMessage, _ func(string, any)) (any, error) {
+	var p struct {
+		BSD string `json:"bsd"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, ipc.Errf(ipc.CodeBadRequest, "tham số không hợp lệ: %v", err)
+	}
+	res, err := imaging.DriveHealthOf(ctx, p.BSD)
+	if err != nil {
+		return nil, ipc.Errf(ipc.CodeIO, "%v", err)
+	}
+	return res, nil
+}
+
+func handleDetectEncryption(ctx context.Context, raw json.RawMessage, _ func(string, any)) (any, error) {
+	var p struct {
+		BSD string `json:"bsd"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, ipc.Errf(ipc.CodeBadRequest, "tham số không hợp lệ: %v", err)
+	}
+	kind, err := imaging.DetectEncryption(ctx, p.BSD)
+	if err != nil {
+		return nil, ipc.Errf(ipc.CodeIO, "%v", err)
+	}
+	return map[string]any{"encryption": string(kind)}, nil
+}
+
+func handleListHistory(ctx context.Context, raw json.RawMessage, _ func(string, any)) (any, error) {
+	var p struct {
+		Limit int `json:"limit"`
+	}
+	_ = json.Unmarshal(raw, &p)
+	path, err := historyPath()
+	if err != nil {
+		return nil, ipc.Errf(ipc.CodeInternal, "%v", err)
+	}
+	recs, err := imaging.LoadHistory(path, p.Limit)
+	if err != nil {
+		return nil, ipc.Errf(ipc.CodeIO, "%v", err)
+	}
+	return map[string]any{"records": recs}, nil
 }
 
 func handleFlashPreflight(ctx context.Context, raw json.RawMessage, _ func(string, any)) (any, error) {
@@ -101,9 +206,13 @@ func handleFlashImage(ctx context.Context, raw json.RawMessage, emit func(string
 		emit("progress", map[string]any{"doneBytes": done, "totalBytes": total})
 	})
 	if err != nil {
+		recordHistory("flash", req.BSD, req.ExpectModel, "error", err.Error())
 		// Trả cả res (nếu có) để UI biết đã ghi tới đâu khi verify thất bại.
 		return res, ipc.Errf(ipc.CodeIO, "%v", err)
 	}
+	recordHistory("flash", req.BSD, req.ExpectModel, "ok",
+		fmt.Sprintf("%s → %d byte%s", filepath.Base(req.ImagePath), res.BytesWritten,
+			map[bool]string{true: ", đã verify", false: ""}[res.Verified]))
 	return res, nil
 }
 
@@ -114,8 +223,11 @@ func handleFormatDisk(ctx context.Context, raw json.RawMessage, _ func(string, a
 	}
 	res, err := imaging.Format(ctx, req)
 	if err != nil {
+		recordHistory("format", req.BSD, req.ExpectModel, "error", err.Error())
 		return nil, ipc.Errf(ipc.CodeIO, "%v", err)
 	}
+	recordHistory("format", req.BSD, req.ExpectModel, "ok",
+		fmt.Sprintf("%s (%s), nhãn %s", res.FS, res.Scheme, res.Label))
 	return res, nil
 }
 
