@@ -141,3 +141,18 @@ func TestParseSmartJSONBad(t *testing.T) {
 		t.Fatal("output hỏng phải Available=false")
 	}
 }
+
+func TestParseSmartJSONNoStatus(t *testing.T) {
+	// smartctl chạy nhưng ổ không báo SMART (USB qua bộ chuyển): có model nhưng
+	// KHÔNG có smart_status. Phải là "không khả dụng", KHÔNG phải "có vấn đề".
+	h := parseSmartJSON([]byte(`{"model_name": "Generic USB"}`))
+	if h.Available {
+		t.Fatal("thiếu smart_status phải Available=false")
+	}
+	if h.Passed {
+		t.Fatal("thiếu smart_status không được báo passed (tránh false alarm)")
+	}
+	if h.Model != "Generic USB" || h.Note == "" {
+		t.Fatalf("cần giữ model + có ghi chú: %+v", h)
+	}
+}
