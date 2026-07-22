@@ -29,6 +29,7 @@ uninstall() {
   echo "Gỡ dịch vụ $LABEL..."
   launchctl bootout system "$PLIST" 2>/dev/null || true
   rm -f "$PLIST"
+  rm -f "$(dirname "$BIN")/mkntfs" "$(dirname "$BIN")/smartctl"
   echo "Đã gỡ. (Giữ lại $BIN; xoá thủ công nếu muốn.)"
 }
 
@@ -44,6 +45,19 @@ if [ ! -f "$REPO_ROOT/build/doctorx-core" ]; then
 fi
 install -m 0755 "$REPO_ROOT/build/doctorx-core" "$BIN"
 echo "→ $BIN"
+
+# 1b. Cài các công cụ ngoài (mkntfs cho Format NTFS, smartctl cho SMART) CẠNH
+#     core: dịch vụ tìm chúng ngay bên cạnh binary của mình. Không có thì bỏ qua
+#     — tính năng tương ứng sẽ báo lỗi rõ ràng khi dùng, phần còn lại vẫn chạy.
+BINDIR="$(dirname "$BIN")"
+for tool in mkntfs smartctl; do
+  if [ -f "$REPO_ROOT/packaging/vendor/$tool" ]; then
+    install -m 0755 "$REPO_ROOT/packaging/vendor/$tool" "$BINDIR/$tool"
+    echo "→ $BINDIR/$tool"
+  else
+    echo "⚠ chưa có packaging/vendor/$tool (chạy 'make tools') — bỏ qua"
+  fi
+done
 
 # 2. Viết LaunchDaemon plist. Truyền -owner-uid để dịch vụ chỉ chấp nhận kết nối
 #    từ đúng người dùng này.
