@@ -57,6 +57,12 @@ func DriveHealthOf(ctx context.Context, bsd string) (*DriveHealth, error) {
 // parseSmartJSON rút các trường quan tâm từ output `smartctl -j`. Thuần để test.
 func parseSmartJSON(data []byte) DriveHealth {
 	var raw struct {
+		Smartctl struct {
+			Messages []struct {
+				String   string `json:"string"`
+				Severity string `json:"severity"`
+			} `json:"messages"`
+		} `json:"smartctl"`
 		ModelName string `json:"model_name"`
 		SerialNum string `json:"serial_number"`
 		// Con trỏ: phân biệt "SMART báo fail" (present, passed=false) với "ổ không
@@ -84,12 +90,20 @@ func parseSmartJSON(data []byte) DriveHealth {
 		return DriveHealth{Available: false, Note: "không đọc được output SMART"}
 	}
 	// Không có smart_status = ổ không thực sự báo SMART (thường là USB qua bộ
-	// chuyển). Không được coi là "có vấn đề" — đó là false alarm.
+	// chuyển: macOS không cho smartctl truy cập SMART qua nhiều bridge). Không
+	// được coi là "có vấn đề" — đó là false alarm.
 	if raw.SmartStatus == nil {
+		note := "ổ không báo trạng thái SMART (thường gặp với USB qua bộ chuyển)"
+		for _, m := range raw.Smartctl.Messages {
+			if m.Severity == "error" && m.String != "" {
+				note = m.String // lý do thật từ smartctl, rõ ràng hơn
+				break
+			}
+		}
 		return DriveHealth{
 			Available: false,
 			Model:     strings.TrimSpace(raw.ModelName),
-			Note:      "ổ không báo trạng thái SMART (thường gặp với USB qua bộ chuyển)",
+			Note:      note,
 		}
 	}
 	h := DriveHealth{
