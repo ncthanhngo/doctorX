@@ -9,12 +9,14 @@ import Observation
 @Observable
 final class ImagingController {
     enum Action: String, CaseIterable, Identifiable {
-        case flash, format, badBlocks
+        case flash, format, wipe, capture, badBlocks
         var id: String { rawValue }
         var title: String {
             switch self {
             case .flash: return "Ghi image"
             case .format: return "Format"
+            case .wipe: return "Xoá an toàn"
+            case .capture: return "Bắt ảnh"
             case .badBlocks: return "Kiểm tra ổ"
             }
         }
@@ -22,11 +24,19 @@ final class ImagingController {
             switch self {
             case .flash: return "square.and.arrow.down.on.square"
             case .format: return "eraser"
+            case .wipe: return "trash.slash"
+            case .capture: return "camera.aperture"
             case .badBlocks: return "stethoscope"
             }
         }
         /// Thao tác có phá dữ liệu không (quyết định có bắt gõ xác nhận).
-        var destructive: Bool { self != .badBlocks }
+        /// capture chỉ ĐỌC nên không phá; badBlocks tuỳ chế độ ghi-thử.
+        var destructive: Bool {
+            switch self {
+            case .flash, .format, .wipe: return true
+            case .capture, .badBlocks: return false
+            }
+        }
     }
 
     enum Phase: Equatable { case idle, ready, running, done, failed }
@@ -45,6 +55,12 @@ final class ImagingController {
     var label = "USB"
     // Tham số bad block
     var writeTest = false
+    // Tham số xoá an toàn
+    var wipeMethod = "zero" // zero | random | 3pass
+    var wipeVerify = true
+    // Tham số bắt ảnh
+    var capturePath = ""
+    var captureCompress = false
 
     // Xác nhận + trạng thái chạy
     var confirmInput = ""
@@ -65,8 +81,13 @@ final class ImagingController {
     var canRun: Bool {
         guard target != nil, phase != .running else { return false }
         if action == .flash && imagePath.isEmpty { return false }
-        let needsConfirm = action.destructive || (action == .badBlocks && writeTest)
+        if action == .capture && capturePath.isEmpty { return false }
         return needsConfirm ? confirmed : true
+    }
+
+    /// Thao tác hiện tại có bắt gõ xác nhận không (phá dữ liệu, hoặc bad-block ghi-thử).
+    var needsConfirm: Bool {
+        action.destructive || (action == .badBlocks && writeTest)
     }
 
     /// Lấy thông tin ổ đích để hiển thị và khoá target trước khi thao tác.
@@ -113,6 +134,23 @@ final class ImagingController {
                     "expectSize": t.sizeBytes, "expectModel": t.model, "confirm": confirmInput,
                 ])
                 resultText = "Đã format \(r["fs"] as? String ?? fs) (\(r["scheme"] as? String ?? scheme)), nhãn \(r["label"] as? String ?? label)."
+            case .wipe:
+                statusText = "Đang xoá an toàn..."
+                r = try await call("wipe_disk", [
+                    "bsd": t.bsd, "method": wipeMethod, "verify": wipeVerify,
+                    "expectSize": t.sizeBytes, "expectModel": t.model, "confirm": confirmInput,
+                ])
+                let passes = r["passes"] as? Int ?? 1
+                let verified = r["verified"] as? Bool ?? false
+                resultText = "Đã xoá (\(r["method"] as? String ?? wipeMethod), \(passes) lượt)"
+                    + (verified ? " · đã kiểm chứng." : ".")
+            case .capture:
+                statusText = "Đang bắt ảnh ổ..."
+                r = try await call("capture_image", [
+                    "bsd": t.bsd, "destPath": capturePath, "compress": captureCompress,
+                ])
+                let bytes = formatBytes((r["bytesRead"] as? NSNumber)?.int64Value ?? 0)
+                resultText = "Đã bắt \(bytes) → \((capturePath as NSString).lastPathComponent)."
             case .badBlocks:
                 statusText = writeTest ? "Đang ghi-thử toàn ổ..." : "Đang quét toàn ổ..."
                 r = try await call("check_bad_blocks", [

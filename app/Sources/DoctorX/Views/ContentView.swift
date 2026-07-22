@@ -4,6 +4,7 @@ struct ContentView: View {
     @State private var state = AppState()
     @State private var showQuickRestore = false
     @State private var showCreateUSB = false
+    @State private var showDiagnostics = false
     @State private var deviceMonitor = DeviceMonitor()
 
     var body: some View {
@@ -44,9 +45,18 @@ struct ContentView: View {
                 .tint(Brand.primary)
                 .help("Ghi image ISO/IMG ra USB, format, hoặc kiểm tra ổ (xoá dữ liệu)")
             }
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    showDiagnostics = true
+                } label: {
+                    Label("Chẩn đoán ổ", systemImage: "stethoscope")
+                }
+                .help("Sức khoẻ SMART, phát hiện mã hoá, và nhật ký thao tác")
+            }
         }
         .sheet(isPresented: $showQuickRestore) { QuickRestoreView(state: state) }
         .sheet(isPresented: $showCreateUSB) { CreateUSBView(disks: state.disks) }
+        .sheet(isPresented: $showDiagnostics) { DiagnosticsView(disks: state.disks) }
         .alert("Có lỗi xảy ra", isPresented: .init(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } }

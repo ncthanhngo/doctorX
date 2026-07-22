@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
 
 /// Màn "Tạo USB" — các thao tác ghi phá huỷ kiểu Rufus: ghi image, format, kiểm
 /// tra bad block. Tách hẳn khỏi luồng cứu hộ; luôn bắt người dùng chọn whole disk
@@ -166,6 +167,33 @@ struct CreateUSBView: View {
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
+        case .wipe:
+            SectionCard(title: "Xoá an toàn", systemImage: "trash.slash") {
+                Picker("Phương pháp", selection: $ctrl.wipeMethod) {
+                    Text("Ghi 0 (1 lượt)").tag("zero")
+                    Text("Ngẫu nhiên (1 lượt)").tag("random")
+                    Text("3 lượt (0 · FF · ngẫu nhiên)").tag("3pass")
+                }
+                Toggle("Kiểm chứng sau khi xoá", isOn: $ctrl.wipeVerify)
+                    .font(.callout)
+                    .disabled(ctrl.wipeMethod != "zero") // chỉ verify được lượt ghi 0
+                Text("Ghi đè toàn ổ để dữ liệu cũ không khôi phục được (NIST 800-88).")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        case .capture:
+            SectionCard(title: "Bắt ảnh ổ → file", systemImage: "camera.aperture") {
+                HStack(spacing: 8) {
+                    Text(ctrl.capturePath.isEmpty ? "Chưa chọn nơi lưu" : (ctrl.capturePath as NSString).lastPathComponent)
+                        .font(.callout).foregroundStyle(ctrl.capturePath.isEmpty ? .secondary : .primary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Button("Lưu vào...") { pickCaptureDest() }
+                }
+                Toggle("Nén gzip", isOn: $ctrl.captureCompress)
+                    .font(.callout)
+                Text("Đọc toàn ổ ra một file ảnh — không đụng dữ liệu trên ổ.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
         case .badBlocks:
             SectionCard(title: "Kiểm tra ổ", systemImage: "stethoscope") {
                 Toggle("Ghi-thử (phá dữ liệu, kỹ hơn)", isOn: $ctrl.writeTest)
@@ -175,6 +203,18 @@ struct CreateUSBView: View {
                      : "Chỉ đọc toàn ổ để tìm sector lỗi — không đụng dữ liệu.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// Mở hộp thoại lưu để chọn nơi ghi file ảnh khi bắt ảnh ổ.
+    private func pickCaptureDest() {
+        let panel = NSSavePanel()
+        panel.title = "Lưu ảnh ổ"
+        let name = (ctrl.target?.model.isEmpty == false ? ctrl.target!.model : ctrl.target?.bsd ?? "disk")
+        panel.nameFieldStringValue = name.replacingOccurrences(of: " ", with: "-")
+            + (ctrl.captureCompress ? ".img.gz" : ".img")
+        if panel.runModal() == .OK, let url = panel.url {
+            ctrl.capturePath = url.path
         }
     }
 
@@ -233,6 +273,8 @@ struct CreateUSBView: View {
         switch ctrl.action {
         case .flash: return "Ghi image ra ổ"
         case .format: return "Format ổ"
+        case .wipe: return "Xoá sạch ổ"
+        case .capture: return "Bắt ảnh ổ"
         case .badBlocks: return ctrl.writeTest ? "Ghi-thử toàn ổ" : "Quét bad block"
         }
     }
