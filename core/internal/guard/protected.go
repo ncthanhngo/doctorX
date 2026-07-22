@@ -45,6 +45,28 @@ func (e *ErrProtected) Error() string {
 	return fmt.Sprintf("từ chối ghi vào %q: %s", e.Path, e.Reason)
 }
 
+// IsMacOSMetadata nhận ra file phụ trợ do chính macOS sinh ra, ở BẤT KỲ cấp nào.
+//
+// Khi chép file lên FAT/exFAT, macOS tạo file AppleDouble "._<tên>" để giữ
+// metadata mà các filesystem này không lưu được, và đánh dấu ẩn. Chúng không
+// phải dữ liệu người dùng, cũng không phải nạn nhân của virus: hiện chúng lên
+// chỉ làm người dùng không tìm thấy dữ liệu thật, còn gỡ cờ ẩn thì tạo ra một
+// đống file rác lộ thiên khi cắm sang Windows.
+func IsMacOSMetadata(path string) bool {
+	base := path
+	if i := strings.LastIndexByte(base, '/'); i >= 0 {
+		base = base[i+1:]
+	}
+	if strings.HasPrefix(base, "._") {
+		return true
+	}
+	switch strings.ToLower(base) {
+	case ".ds_store", ".localized", ".apledb", ".appledouble":
+		return true
+	}
+	return false
+}
+
 // IsProtected cho biết path có bị cấm ghi không. path dùng dấu "/" và tính từ
 // gốc volume, ví dụ "/System Volume Information/abc".
 func IsProtected(path string) bool {

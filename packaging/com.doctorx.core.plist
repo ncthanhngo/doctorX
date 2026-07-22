@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key><string>com.doctorx.core</string>
+	<key>BundleProgram</key><string>Contents/MacOS/doctorx-core</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>Contents/MacOS/doctorx-core</string>
+		<string>serve</string>
+	</array>
+	<!-- Thiếu key này thì daemon không hiện tên ứng dụng trong
+	     System Settings > General > Login Items, người dùng sẽ thấy một mục lạ
+	     không rõ của app nào và có xu hướng tắt đi. -->
+	<key>AssociatedBundleIdentifiers</key>
+	<array><string>com.doctorx.app</string></array>
+	<key>RunAtLoad</key><true/>
+	<key>KeepAlive</key><true/>
+</dict>
+</plist>

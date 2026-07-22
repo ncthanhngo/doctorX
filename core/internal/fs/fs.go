@@ -1,16 +1,22 @@
-// Package fs định nghĩa hợp đồng chung cho mọi filesystem mà DoctorX đọc/ghi
-// trực tiếp trên raw block device.
+// Package fs định nghĩa hợp đồng để định vị và sửa attribute của directory
+// entry trực tiếp trên raw block device.
 //
-// Điểm mấu chốt của toàn dự án: Walk liệt kê MỌI directory entry bất kể
-// attribute, kể cả Hidden|System — thứ Finder và mọi filesystem API của macOS
-// đều không cho thấy.
+// Phạm vi hẹp có chủ đích. Đo trên macOS 15.6 (xem plan, mục "Kết quả đã kiểm
+// chứng") cho thấy file Hidden+System vẫn ĐỌC được bình thường qua mount của
+// macOS, nên việc quét và copy-out dùng filesystem API thông thường. Thứ duy
+// nhất không API nào của macOS làm được là XOÁ BIT SYSTEM — đó là lý do duy
+// nhất package này tồn tại.
+//
+// Vì vậy ở đây KHÔNG có đọc nội dung file: không cluster chain, không runlist,
+// không resident/non-resident. Chỉ định vị entry và lật bit.
 package fs
 
 import (
 	"context"
 	"errors"
-	"io"
 	"time"
+
+	"github.com/soi/doctorx/core/internal/guard"
 )
 
 // Attr là DOS/NTFS file attribute bits. Giá trị khớp chuẩn FAT để FAT có thể
@@ -125,12 +131,14 @@ type Volume interface {
 	// Stat trả về đúng một entry theo đường dẫn.
 	Stat(ctx context.Context, path string) (*Entry, error)
 
-	// Open mở nội dung file để đọc.
-	Open(ctx context.Context, e *Entry) (io.ReadCloser, error)
-
 	// Writable báo volume có cho ghi attribute không, kèm lý do nếu không.
 	// NTFS trả false khi journal bẩn / có hiberfil.sys / dirty bit bật.
 	Writable() (bool, string)
+
+	// MetadataRanges khai báo các vùng byte chứa metadata mà tầng ghi được
+	// phép chạm vào. Driver phải khai báo hẹp nhất có thể — đây là lớp chặn
+	// cuối cùng nếu tính offset sai.
+	MetadataRanges() *guard.RangeSet
 
 	// ClearAttrs dựng buffer cần ghi để gỡ các bit trong mask khỏi entry.
 	// KHÔNG tự ghi xuống device — trả về patch để tầng rescue journal và ghi,

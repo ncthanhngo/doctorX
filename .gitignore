@@ -1,4 +1,14 @@
-# Claude / AI tooling
+# Build output
+build/
+app/.build/
+core/internal/fs/testdata/*.img
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Claude / AI tooling & internal planning
 CLAUDE.md
 CLAUDE.local.md
 .claude/
@@ -11,13 +21,6 @@ AGENTS.md
 .env.*
 *.pem
 *.key
-
-# Go build output
-/bin/
-/dist/
-*.exe
-*.test
-*.out
 
 # OS
 .DS_Store
