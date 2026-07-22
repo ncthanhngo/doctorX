@@ -2,6 +2,7 @@
 build/
 app/.build/
 core/internal/fs/testdata/*.img
+packaging/vendor/
 /bin/
 /dist/
 *.exe
