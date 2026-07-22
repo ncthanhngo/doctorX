@@ -4,6 +4,7 @@
 #   make test       chạy toàn bộ test
 #   make fixtures   sinh lại disk image dùng cho test
 #   make app        ráp DoctorX.app
+#   make mkntfs     build binary mkntfs universal (cho Format → NTFS)
 #   make install    cài lõi vào /usr/local/bin
 #   make daemon     chạy dịch vụ nền (cần sudo)
 
@@ -11,9 +12,10 @@ SHELL := /bin/bash
 BUILD := build
 APP   := $(BUILD)/DoctorX.app
 CORE  := $(BUILD)/doctorx-core
+MKNTFS := packaging/vendor/mkntfs
 BUNDLE_ID := com.doctorx.app
 
-.PHONY: all build core app swift test fixtures clean install daemon fmt
+.PHONY: all build core app swift test fixtures clean install daemon fmt mkntfs
 
 all: build
 
@@ -41,10 +43,24 @@ app: core swift
 	cp $(CORE) $(APP)/Contents/MacOS/doctorx-core
 	cp packaging/Info.plist $(APP)/Contents/Info.plist
 	cp packaging/com.doctorx.core.plist $(APP)/Contents/Library/LaunchDaemons/
+	cp packaging/icon/DoctorX.icns $(APP)/Contents/Resources/DoctorX.icns
+	@# mkntfs (nếu đã build) cho tính năng Format → NTFS; core tìm nó cạnh mình.
+	@if [ -f $(MKNTFS) ]; then \
+		cp $(MKNTFS) $(APP)/Contents/MacOS/mkntfs; \
+		codesign --force --sign - --options runtime $(APP)/Contents/MacOS/mkntfs; \
+	else \
+		echo "⚠ $(MKNTFS) chưa có (chạy 'make mkntfs') — Format NTFS sẽ báo lỗi lúc chạy"; \
+	fi
 	@# Ký ad-hoc để chạy được trên máy dev. Bản phát hành cần Developer ID.
 	codesign --force --sign - --options runtime $(APP)/Contents/MacOS/doctorx-core
 	codesign --force --sign - --options runtime $(APP)
 	@echo "→ $(APP)"
+
+## Build binary mkntfs universal (arm64+x86_64) từ nguồn ntfs-3g (GPLv3) để đóng
+## gói cho tính năng Format → NTFS. Chạy một lần; kết quả cache ở packaging/vendor/.
+mkntfs:
+	packaging/build-mkntfs.sh
+	@echo "→ $(MKNTFS)"
 
 test:
 	cd core && go vet ./... && go test ./...
