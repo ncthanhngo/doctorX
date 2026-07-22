@@ -117,8 +117,27 @@ Kiểm chứng: unhide trên ảnh → mount NTFS của macOS xác nhận hết 
 - **Đơn vị VCN của sub-node**: là *cluster* VCN khi index-record ≥ cluster (thường), nên byte-offset = `vcn × min(cluster, index-record)`, KHÔNG phải `vcn × index-record`. Bug này ẩn trên fixture nhỏ vì `mkntfs` mặc định cluster 4096 = index-record nên hai giá trị trùng; chỉ ổ format cluster 512 mới lộ. Đọc INDX block theo từng cluster qua runlist để chịu được block trải nhiều cluster không liền nhau.
 - **Gom mảnh `$ATTRIBUTE_LIST`**: `collectNonResidentRuns` nối mọi mảnh `$INDEX_ALLOCATION` (base + record phụ) theo thứ tự VCN; xử lý cả `$ATTRIBUTE_LIST` non-resident.
 
+## Ghi phá huỷ: flash / format / bad blocks (package `imaging`)
+
+Ngoài đường rescue read-mostly, DoctorX có một subsystem **ghi phá huỷ toàn ổ** kiểu Rufus. Nó **không** đi qua `blockdev.Writer`/`guard.RangeSet`/`Journal`: ghi cả gigabyte thì không thể sao lưu-trước để hoàn tác, nên bốn lớp bảo vệ của đường rescue không áp dụng được. An toàn ở đây dựa vào ba cổng khác, gom trong `imaging.lockTarget`:
+
+1. **Chỉ whole disk gắn ngoài** — `resolveTarget` bắt tên khớp `^disk[0-9]+$` (từ chối phân vùng/APFS volume) và phải nằm trong `blockdev.ListExternalDisks` (đã lọc `Internal == false`). Ổ nội bộ/khởi động không bao giờ lọt vào.
+2. **Target lock** — dung lượng + model phải khớp giá trị người dùng thấy lúc `flash_preflight`. Chặn ca ổ bị rút rồi cắm ổ khác vào cùng tên BSD giữa preflight và thao tác.
+3. **Xác nhận tường minh** — người dùng phải gõ lại đúng `ConfirmToken` (model, hoặc tên BSD nếu model rỗng), mô phỏng hộp thoại của Rufus.
+
+Ba tính năng, đều tháo mount toàn ổ (`diskutil unmountDisk`) trước khi ghi:
+
+- **Flash** (`flash_image`): đọc ISO/IMG tuần tự, ghi ra `/dev/rdiskN` theo buffer 4 MiB **align sector** (block cuối đệm 0 tới biên sector — rdisk từ chối ghi lệch sector), rồi `Sync`. Verify mặc định bật: đọc lại qua rdisk (character device, bỏ qua buffer cache nên phản ánh byte thật) và so SHA-256; hash chỉ tính đúng số byte thật của image, không tính phần đệm.
+- **Format** (`format_disk`): FAT32/exFAT qua `diskutil eraseDisk` (tự ghi MBR/GPT + newfs một lệnh, không tự dựng partition table). Nhãn chuẩn hoá theo FS (FAT32: IN HOA, ≤11 ký tự, chặn ký tự cấm; exFAT ≤15). NTFS **chặn lại** tới khi đóng gói `mkntfs` — macOS không có tool format NTFS native.
+- **Bad blocks** (`check_bad_blocks`): mặc định read-only (mở rdisk O_RDONLY, quét từng chunk, gộp khoảng lỗi liền kề — không cần confirm vì không phá dữ liệu, nhưng vẫn bắt external whole-disk). Chế độ write-test ghi pattern `0xA5` rồi đọc lại so sánh — **phá huỷ**, đi qua cổng đầy đủ, trả cờ `Destroyed`.
+
+Phần thuần (`copyImage`, `hashDevice`, `scanRead`, `scanWrite`, `buildEraseArgs`, `resolveTarget`, `checkLock`) tách khỏi I/O thiết bị nên `go test` chạy trên file thường bằng quyền người dùng — không cần root, không cần USB.
+
 ## Điểm chưa hoàn thiện
 
+- **Flash/format/bad-block chưa verify trên USB thật** — đường `/dev/rdiskN` chỉ mới test qua file trong CI; cần chạy tay một lần với ổ thật + quyền root.
+- **Format NTFS** chờ đóng gói `mkntfs` (GPLv3) — hiện trả lỗi rõ ràng thay vì làm nửa vời.
+- **Windows bootable USB** (ISO9660/UDF reader, split WIM, UEFI:NTFS) đã hoãn.
 - NTFS chưa test chéo trên Windows thật (không có máy Windows) — đã thay bằng ntfs-3g + mount macOS.
 - Ghi Loc-3 (bản copy index của cha) trong một INDX block **không liền mạch** trên đĩa (hiếm): offset `firstAbs + pos` sẽ sai, nhưng `guard.RangeSet` chặn lại nên không hỏng dữ liệu — chỉ bỏ qua entry đó (an toàn, không phải mất mát). Muốn phủ nốt thì ánh xạ offset từng entry qua runlist.
 - `$ATTRIBUTE_LIST` phân mảnh sâu (nhiều tầng) chỉ hỗ trợ một tầng.
