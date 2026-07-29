@@ -114,13 +114,31 @@ final class ImagingController {
         progress = 0
         resultText = nil
         errorText = nil
+        // File nguồn trên ổ ngoài (/Volumes/) bị macOS TCC chặn daemon đọc. App
+        // (user process) có quyền, nên copy ra /tmp trước — daemon luôn đọc /tmp.
+        var stagedPath: String?
+        defer {
+            if let p = stagedPath { try? FileManager.default.removeItem(atPath: p) }
+        }
         do {
             let r: [String: Any]
             switch action {
             case .flash:
+                let actualPath: String
+                if imagePath.hasPrefix("/Volumes/") {
+                    statusText = "Đang chuẩn bị file nguồn..."
+                    let tmp = NSTemporaryDirectory()
+                        + "doctorx-\(UUID().uuidString)-"
+                        + (imagePath as NSString).lastPathComponent
+                    try await copyFileAsync(from: imagePath, to: tmp)
+                    stagedPath = tmp
+                    actualPath = tmp
+                } else {
+                    actualPath = imagePath
+                }
                 statusText = "Đang ghi image..."
                 r = try await call("flash_image", [
-                    "bsd": t.bsd, "imagePath": imagePath,
+                    "bsd": t.bsd, "imagePath": actualPath,
                     "expectSize": t.sizeBytes, "expectModel": t.model,
                     "confirm": confirmInput, "verify": verify,
                 ])
@@ -178,6 +196,21 @@ final class ImagingController {
             let total = (data["totalBytes"] as? NSNumber)?.doubleValue ?? 0
             Task { @MainActor in
                 self.progress = total > 0 ? done / total : 0
+            }
+        }
+    }
+}
+
+/// Copy file bất đồng bộ — chạy trên background queue để không chặn UI. Dùng để
+/// stage file nguồn từ ổ ngoài (TCC chặn daemon đọc /Volumes/) vào /tmp.
+private func copyFileAsync(from src: String, to dst: String) async throws {
+    try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try FileManager.default.copyItem(atPath: src, toPath: dst)
+                cont.resume()
+            } catch {
+                cont.resume(throwing: error)
             }
         }
     }
