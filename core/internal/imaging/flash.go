@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/soi/doctorx/core/internal/blockdev"
 )
@@ -108,28 +110,26 @@ func Flash(ctx context.Context, req FlashRequest, progress ProgressFunc) (*Flash
 	if err := blockdev.UnmountDisk(ctx, d.BSD); err != nil {
 		return nil, err
 	}
-	// Gắn lại best-effort sau khi xong: nếu image có filesystem macOS hiểu được
-	// thì ổ dùng được ngay; nếu không, lỗi được bỏ qua.
 	defer blockdev.MountDisk(ctx, d.BSD)
 
-	dev, err := os.OpenFile(blockdev.RawDevicePath(d.BSD), os.O_RDWR, 0)
-	if err != nil {
-		return nil, fmt.Errorf("mở thiết bị để ghi: %w", err)
-	}
-	defer dev.Close()
-
+	// Tính hash nguồn trước khi ghi.
 	srcHash := sha256.New()
-	written, err := copyImage(ctx, dev, io.TeeReader(src, srcHash), imgSize, progress)
-	if err != nil {
+	if _, err := io.Copy(srcHash, src); err != nil {
+		return nil, fmt.Errorf("tính hash nguồn: %w", err)
+	}
+	src.Close()
+
+	// Ghi bằng /bin/dd (Apple-signed, có quyền hệ thống) thay vì os.OpenFile
+	// trực tiếp — macOS 15 TCC chặn daemon ad-hoc mở /dev/rdiskN O_RDWR.
+	devPath := blockdev.RawDevicePath(d.BSD)
+	if err := writeWithDD(ctx, req.ImagePath, devPath, imgSize, progress); err != nil {
 		return nil, err
 	}
-	if err := dev.Sync(); err != nil {
-		return nil, fmt.Errorf("đồng bộ ổ sau khi ghi: %w", err)
-	}
 
-	res := &FlashResult{BytesWritten: written, SourceSHA256: hex.EncodeToString(srcHash.Sum(nil))}
+	res := &FlashResult{BytesWritten: imgSize, SourceSHA256: hex.EncodeToString(srcHash.Sum(nil))}
 	if req.Verify {
-		tgtHash, err := hashDevice(ctx, dev, imgSize)
+		// Đọc lại bằng dd (O_RDONLY cũng có thể bị TCC).
+		tgtHash, err := hashDeviceDD(ctx, devPath, imgSize)
 		if err != nil {
 			return res, fmt.Errorf("đọc lại ổ để kiểm tra: %w", err)
 		}
@@ -141,6 +141,41 @@ func Flash(ctx context.Context, req FlashRequest, progress ProgressFunc) (*Flash
 		res.Verified = true
 	}
 	return res, nil
+}
+
+// writeWithDD ghi image ra raw device bằng /bin/dd — binary ký Apple có quyền
+// truy cập thiết bị trên macOS 15+ mà daemon ad-hoc không có.
+func writeWithDD(ctx context.Context, src, dst string, size int64, progress ProgressFunc) error {
+	bs := fmt.Sprintf("bs=%d", bufSize)
+	cmd := exec.CommandContext(ctx, "/bin/dd",
+		"if="+src, "of="+dst, bs, "conv=notrunc")
+	cmd.Stderr = nil // bỏ qua stats output
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ghi ổ bằng dd: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	if progress != nil {
+		progress(size, size)
+	}
+	return nil
+}
+
+// hashDeviceDD đọc lại size byte đầu của device qua dd rồi băm SHA-256. Dùng dd
+// thay vì os.OpenFile vì TCC có thể chặn cả O_RDONLY.
+func hashDeviceDD(ctx context.Context, dev string, size int64) (string, error) {
+	count := (size + int64(bufSize) - 1) / int64(bufSize)
+	cmd := exec.CommandContext(ctx, "/bin/dd",
+		"if="+dev, fmt.Sprintf("bs=%d", bufSize), fmt.Sprintf("count=%d", count))
+	cmd.Stderr = nil
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("đọc lại ổ bằng dd: %w", err)
+	}
+	// dd có thể đọc nhiều hơn size (count * bs), chỉ hash đúng size byte.
+	if int64(len(out)) > size {
+		out = out[:size]
+	}
+	h := sha256.Sum256(out)
+	return hex.EncodeToString(h[:]), nil
 }
 
 // copyImage đọc size byte từ src ghi tuần tự ra dst. Block cuối được đệm 0 tới
