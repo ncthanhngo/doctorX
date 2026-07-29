@@ -125,7 +125,7 @@ final class ImagingController {
             switch action {
             case .flash:
                 let actualPath: String
-                if imagePath.hasPrefix("/Volumes/") {
+                if !imagePath.hasPrefix(NSTemporaryDirectory()) {
                     statusText = "Đang chuẩn bị file nguồn..."
                     let tmp = NSTemporaryDirectory()
                         + "doctorx-\(UUID().uuidString)-"
